@@ -46,6 +46,8 @@ print("---------------------------------------------------")
 
 # print input specification
 seed = 1523376833
+# seed = 3672961927
+
 print("Using seed: " + str(seed))
 base_sim = SchedulerDES(num_processes=num_processes, arrivals_per_time_unit=arrivals_per_time_unit,
                         avg_cpu_burst_time=avg_cpu_burst_time)

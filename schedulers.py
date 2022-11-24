@@ -38,12 +38,13 @@ class SJF(SchedulerDES):
 
 class RR(SchedulerDES):
     def scheduler_func(self, cur_event):
-        ready_processes = [process for process in self.processes if
-                           cur_event.event_time >= process.arrival_time and process.process_state == ProcessStates.READY]
-        ready_processes.sort(key=lambda process:  ((process.service_time - process.remaining_time),process.arrival_time))
-        if len(ready_processes) > 0:
-            # Round Robin
-            return ready_processes[0]
+        all_events = [cur_event]
+        for event in self.events_queue:
+            if event.event_time <= self.time:
+                if self.processes[event.process_id].process_state == ProcessStates.READY:
+                    all_events.append(event)
+        all_events.sort(key=lambda _event: _event.event_time)
+        return self.processes[all_events[0].process_id]
 
     def dispatcher_func(self, cur_process):
         self.process_on_cpu.process_state = ProcessStates.RUNNING
@@ -58,27 +59,30 @@ class RR(SchedulerDES):
 
 class SRTF(SchedulerDES):
     def scheduler_func(self, cur_event):
+        finish_time = self.process_on_cpu.remaining_time + self.time if self.process_on_cpu else self.processes[
+                                                                                                     cur_event.process_id].remaining_time + self.time
         ready_processes = [process for process in self.processes if
-                           process.process_state == ProcessStates.READY]
-        ready_processes.sort(key=lambda process:  ((process.service_time - process.remaining_time),process.arrival_time))
-        start_time = cur_event.event_time
-        end_time = ready_processes[0].remaining_time + start_time
+                           process.arrival_time <= finish_time and process.process_state != ProcessStates.TERMINATED]
+        ready_processes.sort(key=lambda process: process.remaining_time)
+        rtn_process = None
         for process in ready_processes:
-            if process.arrival_time <= end_time:
-                new_end_time = min(end_time, cur_event.event_time + process.remaining_time)
-                if new_end_time != end_time:
-                    self.quantum = new_end_time - start_time
-                    end_time = new_end_time
-        return ready_processes[0]
+            if process.process_state == ProcessStates.NEW:
+                self.quantum = process.arrival_time - cur_event.event_time
+            elif process.process_state == ProcessStates.READY:
+                if rtn_process is None:
+                    rtn_process = process
+                if self.process_on_cpu:
+                    if process.remaining_time < self.process_on_cpu.remaining_time:
+                        self.quantum = process.remaining_time
+                        rtn_process = process
+        return rtn_process
 
     def dispatcher_func(self, cur_process):
         self.process_on_cpu.process_state = ProcessStates.RUNNING
         execute_time = self.time + cur_process.run_for(self.quantum, self.time)
         if cur_process.remaining_time > 0:
             self.process_on_cpu.process_state = ProcessStates.READY
-            self.quantum = math.inf
             return Event(process_id=self.process_on_cpu.process_id, event_type=EventTypes.PROC_CPU_REQ, event_time=execute_time)
         else:
             self.process_on_cpu.process_state = ProcessStates.TERMINATED
-            self.quantum = math.inf
             return Event(process_id=self.process_on_cpu.process_id, event_type=EventTypes.PROC_CPU_DONE, event_time=execute_time)
